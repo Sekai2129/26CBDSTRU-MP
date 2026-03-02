@@ -33,6 +33,25 @@ struct GameState {
     
 };
 
+//-- Function Declarations --
+
+int posToIndex(struct Position pos);
+int isValidPos(struct Position pos);
+int countSet(int set[]);
+int countF(struct GameState game);
+int checkOver(struct GameState game);
+
+struct GameState expand(struct GameState game, struct Position pos);
+struct GameState replace(struct GameState game, struct Position pos);
+struct GameState update(struct GameState game, struct Position pos);
+struct GameState nextPlayerMove(struct GameState game, struct Position pos);
+struct GameState removePiece(struct GameState game, struct Position pos);
+
+void printBoard(struct GameState game);
+void gameOver(struct GameState game);
+
+// -- Game Initialization --
+
 struct GameState initGame() {
     struct GameState game;
     int i;
@@ -100,8 +119,33 @@ int checkOver(struct GameState game) {
     return result;
 }
 
-// forward declaration so Replace can call Expand
-struct GameState expand(struct GameState game, struct Position pos);
+
+/*
+   removePiece
+
+   Purpose: Removes a position from the current player's set,
+            then removes it from S and T as well. Called
+            internally by Expand as its first step.
+
+   Important variables:
+   - idx: the array index of pos, derived from posToIndex
+*/
+struct GameState removePiece(struct GameState game, struct Position pos) {
+    int idx;
+    idx = posToIndex(pos);
+
+    // remove from current player's occupied set
+    if (game.go == 1)
+        game.R[idx] = 0;
+    else
+        game.B[idx] = 0;
+
+    // always remove from S and T regardless of turn
+    game.S[idx] = 0;
+    game.T[idx] = 0;
+
+    return game;
+}
 
 /*
    replace
@@ -117,6 +161,7 @@ struct GameState expand(struct GameState game, struct Position pos);
    - game.found: flag set to 1 when an occupied position is hit,
                  used to decide whether to update S and T
 */
+
 struct GameState replace(struct GameState game, struct Position pos) {
     int idx;
     idx = posToIndex(pos);
@@ -170,6 +215,7 @@ struct GameState replace(struct GameState game, struct Position pos) {
    - u, d, k, r: the four cardinal neighbors of pos
                  u = up, d = down, k = left, r = right
 */
+
 struct GameState expand(struct GameState game, struct Position pos) {
     struct Position u, d, k, r;
 
@@ -213,6 +259,7 @@ struct GameState expand(struct GameState game, struct Position pos) {
    - game.good: reset to 0 at start, flipped to 1 if pos was
                 not yet in S (meaning a new visit was recorded)
 */
+
 struct GameState update(struct GameState game, struct Position pos) {
     int idx;
     idx       = posToIndex(pos);
@@ -233,7 +280,6 @@ struct GameState update(struct GameState game, struct Position pos) {
     return game;
 }
 
-
 /*
    nextPlayerMove
 
@@ -250,6 +296,7 @@ struct GameState update(struct GameState game, struct Position pos) {
    - game.go:    toggled after each valid move
    - game.val:   incremented after each valid move
 */
+
 struct GameState nextPlayerMove(struct GameState game, struct Position pos) {
     int idx;
     idx = posToIndex(pos);
@@ -365,42 +412,48 @@ void printBoard(struct GameState game) {
            countSet(game.R), countSet(game.B), countF(game));
 }
 
-// -- Game Initialization -- 
-
-struct GameState initGame() {
-    struct GameState game;
-    int i;
-    game.good  = 0;
-    game.go    = 1;
-    game.start = 1;
-    game.found = 0;
-    game.val   = 0;
-    game.over  = 0;
-
-    for (i = 0; i < GRID_SIZE; i++) {
-        game.R[i] = 0;
-        game.B[i] = 0;
-        game.S[i] = 0;
-        game.T[i] = 0;
-    }
-
-    printf("Game Initialized\n");
-    return game;
-}
-
 int main(int argc, const char * argv[]) {
 
-    struct GameState game;
-        
+struct GameState game;
+    struct Position pos;
+    int a, b, validInput;
+
     game = initGame();
-        
-    // Confirm initialization     printf("Game initialized.\n");
-    printf("good  = %d\n", game.good);
-    printf("go    = %d\n", game.go);
-    printf("start = %d\n", game.start);
-    printf("found = %d\n", game.found);
-    printf("over  = %d\n", game.over);
-    printf("val   = %d\n", game.val);
-    
-    return EXIT_SUCCESS;
+    printBoard(game);
+
+    while (!game.over) {
+        printf("\nTurn %d | Player: %s\n",
+               game.val + 1,
+               game.go ? "R (Red)" : "B (Blue)");
+
+        if (game.start)
+            printf("Placement phase: pick any free position\n");
+        else
+            printf("Movement phase: pick your own piece\n");
+
+        printf("Enter row and col (e.g. 2 3): ");
+        scanf("%d %d", &a, &b);
+
+        // validate that input is within M = C x C
+        pos.a      = a;
+        pos.b      = b;
+        validInput = isValidPos(pos);
+
+        if (validInput == 0) {
+            printf("Invalid position! Row and col must be between 1 and 3.\n");
+        } else if (game.start == 0 && game.go == 1 && game.R[posToIndex(pos)] != 1) {
+            // movement phase: Red must pick their own piece
+            printf("Red must select one of their own pieces!\n");
+        } else if (game.start == 0 && game.go == 0 && game.B[posToIndex(pos)] != 1) {
+            // movement phase: Blue must pick their own piece
+            printf("Blue must select one of their own pieces!\n");
+        } else {
+            game = nextPlayerMove(game, pos);
+            printBoard(game);
+        }
+    }
+
+    gameOver(game);
+
+    return 0;
 }
