@@ -130,6 +130,7 @@ int checkOver(struct GameState game) {
    Important variables:
    - idx: the array index of pos, derived from posToIndex
 */
+
 struct GameState removePiece(struct GameState game, struct Position pos) {
     int idx;
     idx = posToIndex(pos);
@@ -168,23 +169,27 @@ struct GameState replace(struct GameState game, struct Position pos) {
     game.found = 0;
 
     if (game.go == 1) {
-        // Red's turn: capture Blue, acknowledge own, or claim free
+        // Red's turn: capture Blue or acknowledge own
         if (game.B[idx] == 1) {
             game.B[idx] = 0;
             game.found  = 1;
         } else if (game.R[idx] == 1) {
             game.found = 1;
-        } else {
+        }
+        // claim cell if Red does not already occupy it
+        if (game.R[idx] == 0) {
             game.R[idx] = 1;
         }
     } else {
-        // Blue's turn: capture Red, acknowledge own, or claim free
+        // Blue's turn: capture Red or acknowledge own
         if (game.R[idx] == 1) {
             game.R[idx] = 0;
             game.found  = 1;
         } else if (game.B[idx] == 1) {
             game.found = 1;
-        } else {
+        }
+        // claim cell if Blue does not already occupy it
+        if (game.B[idx] == 0) {
             game.B[idx] = 1;
         }
     }
@@ -216,6 +221,7 @@ struct GameState replace(struct GameState game, struct Position pos) {
                  u = up, d = down, k = left, r = right
 */
 
+// fix seen after being expanded
 struct GameState expand(struct GameState game, struct Position pos) {
     struct Position u, d, k, r;
 
@@ -242,7 +248,7 @@ struct GameState expand(struct GameState game, struct Position pos) {
         game = replace(game, k);
     if (isValidPos(r))
         game = replace(game, r);
-
+    
     return game;
 }
 
@@ -301,13 +307,13 @@ struct GameState nextPlayerMove(struct GameState game, struct Position pos) {
     int idx;
     idx = posToIndex(pos);
 
-    if (!game.over && game.start && game.go) {
-        // placement phase: Red places piece
+    if (!game.over && game.start && game.go && game.R[idx] == 0 && game.B[idx] == 0) {
+        // placement phase: Red places piece on a free cell only
         game.R[idx] = 1;
         game.S[idx] = 1;
         game.good   = 1;
-    } else if (!game.over && game.start && !game.go) {
-        // placement phase: Blue places piece
+    } else if (!game.over && game.start && !game.go && game.R[idx] == 0 && game.B[idx] == 0) {
+        // placement phase: Blue places piece on a free cell only
         game.B[idx] = 1;
         game.S[idx] = 1;
         game.good   = 1;
@@ -316,8 +322,12 @@ struct GameState nextPlayerMove(struct GameState game, struct Position pos) {
                 (!game.go && game.B[idx] == 1))) {
         // movement phase: player selects their own piece
         game = update(game, pos);
-        game.good = 1;
+        // only confirm as valid if update actually did something (good was set by update)
+        if (game.good == 1)
+            game.good = 1;
     }
+    
+    
 
     // end placement phase when both sides have exactly one piece
     if (game.start && countSet(game.R) == 1 && countSet(game.B) == 1)
@@ -347,6 +357,7 @@ struct GameState nextPlayerMove(struct GameState game, struct Position pos) {
    - rCount: number of Red occupied positions
    - bCount: number of Blue occupied positions
 */
+
 void gameOver(struct GameState game) {
     int rCount, bCount;
     rCount = countSet(game.R);
@@ -387,10 +398,10 @@ void printBoard(struct GameState game) {
            game.val,
            game.go ? "Red's turn" : "Blue's turn",
            game.start);
-    printf("  +---+---+---+\n");
+    printf("    +---+---+---+\n");
 
     for (a = 1; a <= C_MAX; a++) {
-        printf("  |");
+        printf("    |");
         for (b = 1; b <= C_MAX; b++) {
             struct Position p;
             p.a = a;
@@ -403,18 +414,17 @@ void printBoard(struct GameState game) {
             else
                 printf(" . |");
         }
-        printf("  row %d\n", a);
-        printf("  +---+---+---+\n");
+        printf("    row %d\n", a);
+        printf("    +---+---+---+\n");
     }
 
-    printf("   col 1   2   3\n");
-    printf("  |R|=%d  |B|=%d  |F|=%d\n",
-           countSet(game.R), countSet(game.B), countF(game));
+    printf("col   1   2   3 \n");
+    printf("\n  |R|=%d  |B|=%d  |F|=%d\n", countSet(game.R), countSet(game.B), countF(game));
 }
 
 int main(int argc, const char * argv[]) {
 
-struct GameState game;
+    struct GameState game;
     struct Position pos;
     int a, b, validInput;
 
@@ -422,9 +432,7 @@ struct GameState game;
     printBoard(game);
 
     while (!game.over) {
-        printf("\nTurn %d | Player: %s\n",
-               game.val + 1,
-               game.go ? "R (Red)" : "B (Blue)");
+        printf("\nTurn %d | Player: %s\n", game.val + 1, game.go ? "R (Red)" : "B (Blue)");
 
         if (game.start)
             printf("Placement phase: pick any free position\n");
@@ -441,15 +449,25 @@ struct GameState game;
 
         if (validInput == 0) {
             printf("Invalid position! Row and col must be between 1 and 3.\n");
+        } else if (game.start == 1 && game.R[posToIndex(pos)] == 1) {
+            // placement phase: Red already occupies this cell
+            printf("That position is already occupied!\n");
+        } else if (game.start == 1 && game.B[posToIndex(pos)] == 1) {
+            // placement phase: Blue already occupies this cell
+            printf("That position is already occupied!\n");
         } else if (game.start == 0 && game.go == 1 && game.R[posToIndex(pos)] != 1) {
             // movement phase: Red must pick their own piece
             printf("Red must select one of their own pieces!\n");
         } else if (game.start == 0 && game.go == 0 && game.B[posToIndex(pos)] != 1) {
             // movement phase: Blue must pick their own piece
             printf("Blue must select one of their own pieces!\n");
+        } else if (game.start == 0 && game.T[posToIndex(pos)] == 1) {
+            // movement phase: piece already fully expanded, invalid selection
+            printf("That piece has already been expanded and cannot be selected!\n");
         } else {
             game = nextPlayerMove(game, pos);
             printBoard(game);
+            printf("\n================================\n");
         }
     }
 
