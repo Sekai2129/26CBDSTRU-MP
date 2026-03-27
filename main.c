@@ -7,6 +7,11 @@
 #define N_MAX 16
 #define OVER_VAL 20
 
+// my final changes as of March 27, still up for testing @dylan and revisions
+// make srue to limit test as much as possible
+// I'll leave the cleaning up to you guys (if you want to make the experience smoother
+// please edit this branch and then create a pull request - russel
+
 // -- Applicable Sets --
 
 struct Position {
@@ -127,6 +132,13 @@ int checkOver(struct GameState game) {
             then removes it from S and T as well. Called
             internally by Expand as its first step.
 
+   Spec:
+   Remove(pos ∈ M)
+     go  → R = R − {pos}
+     ¬go → B = B − {pos}
+     S = S − {pos}
+     T = T − {pos}
+
    Important variables:
    - idx: the array index of pos, derived from posToIndex
 */
@@ -156,6 +168,18 @@ struct GameState removePiece(struct GameState game, struct Position pos) {
             (capture), occupied by themselves (found trigger),
             or free (claim). Then updates S and T accordingly,
             calling Expand if the position has been visited twice.
+
+   Spec:
+   Replace(pos ∈ M)
+     found = false
+     (go ∧ pos ∈ B) → B = B − {pos} ∧ found = true
+     (go ∧ pos ∈ R) → found = true
+     (go ∧ pos ∉ R) → R = R ∪ {pos}
+     (¬go ∧ pos ∈ R) → R = R − {pos} ∧ found = true
+     (¬go ∧ pos ∈ B) → found = true
+     (¬go ∧ pos ∉ B) → B = B ∪ {pos}
+     (found ∧ pos ∉ S) → S = S ∪ {pos} ∧ found = false
+     (found ∧ pos ∈ S ∧ pos ∉ T) → T = T ∪ {pos} ∧ Expand(pos)
 
    Important variables:
    - idx:       array index of pos
@@ -216,12 +240,21 @@ struct GameState replace(struct GameState game, struct Position pos) {
             Blue expands downward. Both always expand left and right.
             Neighbors outside M = C x C are skipped.
 
+   Spec:
+   Expand(pos ∈ M)
+     (a, b) = pos
+     u = (a−1, b), d = (a+1, b), k = (a, b−1), r = (a, b+1)
+     Remove(pos)
+     go  → Replace(u)
+     ¬go → Replace(d)
+     Replace(k)
+     Replace(r)
+
    Important variables:
    - u, d, k, r: the four cardinal neighbors of pos
                  u = up, d = down, k = left, r = right
 */
 
-// fix seen after being expanded
 struct GameState expand(struct GameState game, struct Position pos) {
     struct Position u, d, k, r;
 
@@ -260,10 +293,18 @@ struct GameState expand(struct GameState game, struct Position pos) {
             the position needs to be added to S. If pos was already
             in S and not yet in T, triggers Expand.
 
+   Spec:
+   Update(pos ∈ M)
+     good = false
+     (pos ∉ S) → S = S ∪ {pos} ∧ good = ¬good
+     (¬good ∧ pos ∈ S ∧ pos ∉ T) → T = T ∪ {pos} ∧ Expand(pos)
+
    Important variables:
    - idx:       array index of pos
-   - game.good: reset to 0 at start, flipped to 1 if pos was
-                not yet in S (meaning a new visit was recorded)
+   - game.good: reset to 0 at start; flipped to 1 only if pos was
+                not yet in S (first visit recorded here).
+                NOTE: NextPlayerMove always forces good = true
+                after calling Update, per spec.
 */
 
 struct GameState update(struct GameState game, struct Position pos) {
@@ -271,13 +312,13 @@ struct GameState update(struct GameState game, struct Position pos) {
     idx       = posToIndex(pos);
     game.good = 0;
 
-    // pos not yet seen: add to S and mark good as true
+    // pos not yet seen: add to S and flip good (0 → 1)
     if (game.S[idx] == 0) {
         game.S[idx] = 1;
-        game.good   = !game.good; // flips 0 to 1
+        game.good   = !game.good;
     }
 
-    // pos already in S but not expanded: add to T and trigger Expand
+    // pos already in S but not yet expanded: add to T and trigger Expand
     if (game.good == 0 && game.S[idx] == 1 && game.T[idx] == 0) {
         game.T[idx] = 1;
         game        = expand(game, pos);
@@ -295,45 +336,54 @@ struct GameState update(struct GameState game, struct Position pos) {
             piece each. Switches turns and increments val if the
             move was valid (good=1).
 
+   Spec:
+   NextPlayerMove(pos ∈ M)
+     (¬over ∧ start ∧ go)  → R = R ∪ {pos} ∧ S = S ∪ {pos} ∧ good = true
+     (¬over ∧ start ∧ ¬go) → B = B ∪ {pos} ∧ S = S ∪ {pos} ∧ good = true
+     (¬over ∧ ¬start ∧ (go ∧ pos ∈ R ∨ ¬go ∧ pos ∈ B)) → Update(pos) ∧ good = true
+     (start ∧ |R| = 1 ∧ |B| = 1) → start = false
+     (¬over ∧ good) → good = ¬good ∧ go = ¬go ∧ val = val + 1
+
    Important variables:
    - idx:        array index of pos
    - game.good:  set to 1 if move was valid, used to confirm turn
    - game.start: flipped to 0 when |R|=1 and |B|=1
    - game.go:    toggled after each valid move
    - game.val:   incremented after each valid move
+
+   Design note: Input validation (occupied cells, wrong player's
+   piece, out-of-bounds) is handled in main before this function
+   is called, keeping this function faithful to the spec.
 */
 
 struct GameState nextPlayerMove(struct GameState game, struct Position pos) {
     int idx;
     idx = posToIndex(pos);
 
-    if (!game.over && game.start && game.go && game.R[idx] == 0 && game.B[idx] == 0) {
-        // placement phase: Red places piece on a free cell only
+    // placement phase: Red places on any free cell
+    if (!game.over && game.start && game.go) {
         game.R[idx] = 1;
         game.S[idx] = 1;
         game.good   = 1;
-    } else if (!game.over && game.start && !game.go && game.R[idx] == 0 && game.B[idx] == 0) {
-        // placement phase: Blue places piece on a free cell only
+    // placement phase: Blue places on any free cell
+    } else if (!game.over && game.start && !game.go) {
         game.B[idx] = 1;
         game.S[idx] = 1;
         game.good   = 1;
+    // movement phase: player selects their own piece
     } else if (!game.over && !game.start &&
                ((game.go && game.R[idx] == 1) ||
                 (!game.go && game.B[idx] == 1))) {
-        // movement phase: player selects their own piece
-        game = update(game, pos);
-        // only confirm as valid if update actually did something (good was set by update)
-        if (game.good == 1)
-            game.good = 1;
+        // call Update, then force good = true per spec
+        game      = update(game, pos);
+        game.good = 1;
     }
-    
-    
 
     // end placement phase when both sides have exactly one piece
     if (game.start && countSet(game.R) == 1 && countSet(game.B) == 1)
         game.start = 0;
 
-    // valid move: flip good, switch turns, increment val
+    // valid move: reset good, switch turns, increment val
     if (!game.over && game.good) {
         game.good = !game.good;  // reset to 0
         game.go   = !game.go;    // switch player
@@ -352,6 +402,12 @@ struct GameState nextPlayerMove(struct GameState game, struct Position pos) {
    Purpose: Determines and prints the final result of the game
             by comparing the sizes of R and B. Called once the
             over condition becomes true.
+
+   Spec:
+   GameOver()
+     (over ∧ |R| > |B|) → result = "R wins"
+     (over ∧ |R| < |B|) → result = "B wins"
+     (over ∧ |R| = |B|) → result = "draw"
 
    Important variables:
    - rCount: number of Red occupied positions
@@ -391,6 +447,7 @@ void gameOver(struct GameState game) {
    - a, b: row and col used to iterate over the grid
    - idx:  array index of current cell
 */
+
 void printBoard(struct GameState game) {
     int a, b, idx;
 
@@ -462,7 +519,9 @@ int main(int argc, const char * argv[]) {
             // movement phase: Blue must pick their own piece
             printf("Blue must select one of their own pieces!\n");
         } else if (game.start == 0 && game.T[posToIndex(pos)] == 1) {
-            // movement phase: piece already fully expanded, invalid selection
+            // movement phase: piece already fully expanded
+            // design note: selecting a T-member would re-trigger Expand
+            // with no useful effect; this guard prevents that invalid state
             printf("That piece has already been expanded and cannot be selected!\n");
         } else {
             game = nextPlayerMove(game, pos);
