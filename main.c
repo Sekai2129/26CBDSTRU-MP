@@ -56,15 +56,15 @@ struct GameState initGame() {
     struct GameState game;
     int i;
 
-    game.good  = 0;
-    game.go    = 1;
-    game.start = 1;
-    game.found = 0;
-    game.val   = 0;
-    game.over  = 0;
+    game.good  = 0; // Indicates player turn has ended (1 = player ends turn, 0 = player is still making their move)
+    game.go    = 1; // Indicates player turn (1 = red, 0 = blue)
+    game.start = 1; // Indicates start phase of the game (0 = players have selected starting positions, 1 = moved on from start phase)
+    game.found = 0; // Indicates that player is on a spot that is occupied (1 = on occupied, 0 = on free)
+    game.val   = 0; // Turn number
+    game.over  = 0; // Indicates if game has ended (1 = no more possible moves can be made, 0 = moves can still be made)
     
-    for (i = 0; i < GRID_SIZE; i++) {
-        game.R[i] = 0;
+    for (i = 0; i < GRID_SIZE; i++) { // Frees up 3x3 board
+        game.R[i] = 0; 
         game.B[i] = 0;
         game.S[i] = 0;
         game.T[i] = 0;
@@ -78,10 +78,16 @@ struct GameState initGame() {
 // -- Helper Functions --
 
 int posToIndex(struct Position pos) {
-    return (pos.a - 1) * 3 + (pos.b - 1);
+    return (pos.a - 1) + (pos.b - 1) * 3; 
+    /*
+        index to grid:
+        1   2   3
+        4   5   6
+        7   8   9
+    */
 }
 
-int isValidPos(struct Position pos) {
+int isValidPos(struct Position pos) { // checks if position is within 3x3 grid
     int validA, validB, result;
     validA = (pos.a >= C_MIN && pos.a <= C_MAX);
     validB = (pos.b >= C_MIN && pos.b <= C_MAX);
@@ -89,7 +95,7 @@ int isValidPos(struct Position pos) {
     return result;
 }
 
-int countSet(int set[]) {
+int countSet(int set[]) { // counts number of items in the grid
     int i, count;
     count = 0;
     for (i = 0; i < GRID_SIZE; i++) {
@@ -99,7 +105,7 @@ int countSet(int set[]) {
     return count;
 }
 
-int countF(struct GameState game) {
+int countF(struct GameState game) { // counts number of free spots in the grid
     int i, count;
     count = 0;
     for (i = 0; i < GRID_SIZE; i++) {
@@ -109,7 +115,7 @@ int countF(struct GameState game) {
     return count;
 }
 
-int checkOver(struct GameState game) {
+int checkOver(struct GameState game) { // checks if conditions are met to end the game
     int fCount, rCount, bCount, oneSideGone, result;
     fCount = countF(game);
     rCount = countSet(game.R);
@@ -131,7 +137,7 @@ int checkOver(struct GameState game) {
    - idx: the array index of pos, derived from posToIndex
 */
 
-struct GameState removePiece(struct GameState game, struct Position pos) {
+struct GameState removePiece(struct GameState game, struct Position pos) { // removes objects on current position
     int idx;
     idx = posToIndex(pos);
 
@@ -163,7 +169,7 @@ struct GameState removePiece(struct GameState game, struct Position pos) {
                  used to decide whether to update S and T
 */
 
-struct GameState replace(struct GameState game, struct Position pos) {
+struct GameState replace(struct GameState game, struct Position pos) { // replaces object on current position
     int idx;
     idx = posToIndex(pos);
     game.found = 0;
@@ -212,13 +218,13 @@ struct GameState replace(struct GameState game, struct Position pos) {
 
    Purpose: Triggered when a position is visited a second time.
             Removes the current position then spreads the Replace
-            effect to its cardinal neighbors. Red expands upward,
-            Blue expands downward. Both always expand left and right.
+            effect to its cardinal neighbors. Red expands to the left,
+            Blue expands to the right. Both always expand up and down.
             Neighbors outside M = C x C are skipped.
 
    Important variables:
    - u, d, k, r: the four cardinal neighbors of pos
-                 u = up, d = down, k = left, r = right
+                 u = left, d = right, k = up, r = down
 */
 
 // fix seen after being expanded
@@ -226,15 +232,15 @@ struct GameState expand(struct GameState game, struct Position pos) {
     struct Position u, d, k, r;
 
     // compute all four cardinal neighbors
-    u.a = pos.a - 1; u.b = pos.b;
-    d.a = pos.a + 1; d.b = pos.b;
-    k.a = pos.a;     k.b = pos.b - 1;
-    r.a = pos.a;     r.b = pos.b + 1;
+    u.a = pos.a - 1; u.b = pos.b; 
+    d.a = pos.a + 1; d.b = pos.b; 
+    k.a = pos.a;     k.b = pos.b - 1; 
+    r.a = pos.a;     r.b = pos.b + 1; 
 
     // step 1: remove current position from all sets
     game = removePiece(game, pos);
 
-    // step 2: conditional neighbor - Red goes up, Blue goes down
+    // step 2: conditional neighbor - Red goes left, Blue goes right
     if (game.go == 1) {
         if (isValidPos(u))
             game = replace(game, u);
@@ -243,7 +249,7 @@ struct GameState expand(struct GameState game, struct Position pos) {
             game = replace(game, d);
     }
 
-    // step 3: always replace left and right if within bounds
+    // step 3: always replace up and down if within bounds
     if (isValidPos(k))
         game = replace(game, k);
     if (isValidPos(r))
@@ -298,7 +304,7 @@ struct GameState update(struct GameState game, struct Position pos) {
    Important variables:
    - idx:        array index of pos
    - game.good:  set to 1 if move was valid, used to confirm turn
-   - game.start: flipped to 0 when |R|=1 and |B|=1
+   - game.start: flipped to 0 when both players have initialized starting positions
    - game.go:    toggled after each valid move
    - game.val:   incremented after each valid move
 */
@@ -322,12 +328,9 @@ struct GameState nextPlayerMove(struct GameState game, struct Position pos) {
                 (!game.go && game.B[idx] == 1))) {
         // movement phase: player selects their own piece
         game = update(game, pos);
-        // only confirm as valid if update actually did something (good was set by update)
-        if (game.good == 1)
-            game.good = 1;
+        // turns good back into true if it stayed false in the update func
+        game.good = 1;
     }
-    
-    
 
     // end placement phase when both sides have exactly one piece
     if (game.start && countSet(game.R) == 1 && countSet(game.B) == 1)
@@ -392,7 +395,7 @@ void gameOver(struct GameState game) {
    - idx:  array index of current cell
 */
 void printBoard(struct GameState game) {
-    int a, b, idx;
+    int row, col, idx;
 
     printf("\n  Board (val=%d | %s | start=%d)\n",
            game.val,
@@ -400,12 +403,12 @@ void printBoard(struct GameState game) {
            game.start);
     printf("    +---+---+---+\n");
 
-    for (a = 1; a <= C_MAX; a++) {
+    for (row = 1; row <= C_MAX; row++) {
         printf("    |");
-        for (b = 1; b <= C_MAX; b++) {
+        for (col = 1; col <= C_MAX; col++) {
             struct Position p;
-            p.a = a;
-            p.b = b;
+            p.a = col;
+            p.b = row;
             idx = posToIndex(p);
             if (game.R[idx] == 1)
                 printf(" R |");
@@ -414,7 +417,7 @@ void printBoard(struct GameState game) {
             else
                 printf(" . |");
         }
-        printf("    row %d\n", a);
+        printf("    row %d\n", row);
         printf("    +---+---+---+\n");
     }
 
@@ -426,7 +429,7 @@ int main(int argc, const char * argv[]) {
 
     struct GameState game;
     struct Position pos;
-    int a, b, validInput;
+    int row, col, validInput;
 
     game = initGame();
     printBoard(game);
@@ -440,11 +443,11 @@ int main(int argc, const char * argv[]) {
             printf("Movement phase: pick your own piece\n");
 
         printf("Enter row and col (e.g. 2 3): ");
-        scanf("%d %d", &a, &b);
+        scanf("%d %d", &row, &col);
 
         // validate that input is within M = C x C
-        pos.a      = a;
-        pos.b      = b;
+        pos.a      = col;
+        pos.b      = row;
         validInput = isValidPos(pos);
 
         if (validInput == 0) {
